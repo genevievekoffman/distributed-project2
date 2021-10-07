@@ -1,6 +1,9 @@
 #include "net_include.h"
+#include "packets.h"
 
-int main()
+#define MAX_MACHINES 10
+
+int main(int argc, char **argv)
 {
     struct sockaddr_in name;
     struct sockaddr_in send_addr;
@@ -17,6 +20,42 @@ int main()
     int                num;
     char               mess_buf[MAX_MESS_LEN];
     char               input_buf[80];
+
+    int                num_packets;
+    int                machine_index;
+    int                num_machines;
+    int                loss_rate;
+
+    /*handle arguments*/
+    if ( argc != 5 ) {
+        printf("Usage: mcast <num_packets> <machine_index> <num_machines> <loss_rate>\n");
+        exit(0);
+    }
+
+    //can we assume that we won't have duplicate machines joining with the same machine index? 
+    char *str = argv[1];
+    num_packets = atoi(str);
+
+    str = argv[3];
+    num_machines = atoi(str);
+    if ( num_machines > 10 || num_machines < 1 ) {
+        printf("invalid number of machines\n");
+        exit(1);
+    }
+
+    str = argv[2]; //machine index
+    machine_index = atoi(str); //converts numeric str to int
+    //must be in range 1 ... <num_machines>
+    if ( machine_index > num_machines || machine_index < 1 ) { 
+        printf("invalid machine_index\n");
+        exit(1);
+    }
+
+    str = argv[4];
+    loss_rate = atoi(str); //loss rate must be 0 ... 20
+    
+    printf("num_packets = %d, machine_index = %d, num_machines = %d, loss_rate = %d\n", num_packets, machine_index, num_machines, loss_rate);
+
 
     mcast_addr = 225 << 24 | 0 << 16 | 1 << 8 | 1; /* (225.0.1.1) */
 
