@@ -8,9 +8,7 @@ int main(int argc, char **argv)
 {
     struct sockaddr_in name;
     struct sockaddr_in send_addr;
-
     int                mcast_addr;
-
     struct ip_mreq     mreq;
     unsigned char      ttl_val;
 
@@ -19,20 +17,17 @@ int main(int argc, char **argv)
     fd_set             read_mask, write_mask, excep_mask;
     int                bytes;
     int                num;
-    char               mess_buf[MAX_MESS_LEN];
-    char               input_buf[80];
+    //struct timeval     timeout;
+    //char               mess_buf[MAX_MESS_LEN];
 
     int                num_packets;
     int                machine_index;
     int                num_machines;
     int                loss_rate;
-
     int                counter = 0;
     int                pkt_index = 0; 
-    /*START*/
 
-    
-   
+    /*START*/
     
     /*handle arguments*/
     if ( argc != 5 ) {
@@ -127,12 +122,14 @@ int main(int argc, char **argv)
     while ( burst > 0 && pkt_index < num_packets ) {
         pkt_index++;
         counter++;
+        
         //create header & a data_pkt 
         header data_head;
         data_head.tag = 0;
         data_head.machine_index = machine_index;
         data_pkt new_pkt;
         new_pkt.head = data_head;
+        //printf("\nhead test: tag = %d, machine_index = %d\n", new_pkt.head.tag, new_pkt.head.machine_index);
         new_pkt.pkt_index = pkt_index;
         new_pkt.counter = counter;
         /*init random num generator*/
@@ -145,11 +142,13 @@ int main(int argc, char **argv)
     
         /*save the new_pkt in received_pkts grid*/
 
-        /*multicast, send the packet*/
+        /* multicast/send the packet*/
         char buffer[sizeof(new_pkt)]; //save the new data pkt into buffer before sending it
         memcpy(buffer, &new_pkt, sizeof(new_pkt)); //copies sizeof(new_pkt) bytes into buffer from new_pkt
         sendto( ss, buffer, strlen(buffer), 0, (struct sockaddr *)&send_addr, sizeof(send_addr) );
-        printf("Sent: \n\tpkt_index = %d,\n\trand_num = %d\n", pkt_index, new_pkt.rand_num);
+       
+        printf("Machine#%d sent: \n\thead: tag = %d, machine_index = %d\n\tpkt_index = %d\n\trand_num = %d\n", machine_index, new_pkt.head.tag, new_pkt.head.machine_index, pkt_index, new_pkt.rand_num);
+        printf("\nsizeof(new_pkt) = %ld\n", sizeof(new_pkt));
         burst--;
     }   
 
@@ -162,12 +161,25 @@ int main(int argc, char **argv)
 
     //header received_pkt;
     //receiving
+    
+    //how long do we want to be recieving pkts for? until we dont receive one in x amnt of time?
+    for(;;)
+    {
+        read_mask = mask;
+        //timeout.tv_sec = 1; //what do these 2 lines do?
+        //timeout.tv_usec = 0;
+        num = select( FD_SETSIZE, &read_mask, NULL, NULL, NULL); //&timeout); //event triggered
+        if ( num > 0 ) {
+            if ( FD_ISSET( sr, &read_mask) ) { //recieved some type of packet 
+                data_pkt rec; //header head; 
+                bytes = recv( sr, &rec, sizeof(rec), 0); //read into a data_pkt by default 
+                printf("\nbytes = %d\n", bytes);
+                printf("received pkt with header:\n\ttag = %d\n\tmachine_index = %d\n", rec.head.tag, rec.head.machine_index);
+            }
+        }
+    }
 
-
-
-
-
-
+    /*
     for(;;)
     {
         read_mask = mask;
@@ -177,15 +189,10 @@ int main(int argc, char **argv)
                 bytes = recv( sr, mess_buf, sizeof(mess_buf), 0 );
                 mess_buf[bytes] = 0;
                 printf( "received : %s\n", mess_buf );
-            }else if( FD_ISSET(0, &read_mask) ) {
-                bytes = read( 0, input_buf, sizeof(input_buf) );
-                input_buf[bytes] = 0;
-                printf( "there is an input: %s\n", input_buf );
-                sendto( ss, input_buf, strlen(input_buf), 0, 
-                    (struct sockaddr *)&send_addr, sizeof(send_addr) );
-            }
+            } 
         }
     }
+    */
 
     return 0;
 }
