@@ -14,7 +14,7 @@ int main(int argc, char **argv)
 
     int                ss,sr;
     fd_set             mask;
-    fd_set             read_mask, write_mask, excep_mask;
+    fd_set             read_mask;
     int                bytes;
     int                num;
     //struct timeval     timeout;
@@ -107,92 +107,109 @@ int main(int argc, char **argv)
     send_addr.sin_addr.s_addr = htonl(mcast_addr);  /* mcast address */
     send_addr.sin_port = htons(PORT);
 
-    FD_ZERO( &mask );
-    FD_ZERO( &write_mask );
-    FD_ZERO( &excep_mask );
+    FD_ZERO( &mask ); 
     FD_SET( sr, &mask );
     FD_SET( (long)0, &mask );    /* stdin */
     
     //cannot proceed until start_mcast is called
     
     /*TRANSFER*/
+    
+    //while loop - condition?
+    for(;;) {
+        //sending a packet send_packet():
+        int burst = 15; 
+        while ( burst > 0 && pkt_index < num_packets ) { 
+            pkt_index++;
+            counter++;
+    
+            //create header & a data_pkt 
+            header data_head;
+            data_head.tag = 0;
+            data_head.machine_index = machine_index;
+            data_pkt new_pkt;
+            new_pkt.head = data_head;
+            //printf("\nhead test: tag = %d, machine_index = %d\n", new_pkt.head.tag, new_pkt.head.machine_index);
+            new_pkt.pkt_index = pkt_index;
+            new_pkt.counter = counter;
+            /*init random num generator*/
+            srand(time(NULL));
+            new_pkt.rand_num = rand() % 1000000 + 1; //generates random number 1 to 1 mil
+            //new_pkt.acks = last_in_order_arr;  //do we need to memcpy the array everytime?
+            memcpy(new_pkt.acks, last_in_order_arr, sizeof(last_in_order_arr));
 
-    //sending a packet send_packet():
-    int burst = 15;
-    while ( burst > 0 && pkt_index < num_packets ) {
-        pkt_index++;
-        counter++;
+            //set new_pkt->payloads = random 1400 bytes?
         
-        //create header & a data_pkt 
-        header data_head;
-        data_head.tag = 0;
-        data_head.machine_index = machine_index;
-        data_pkt new_pkt;
-        new_pkt.head = data_head;
-        //printf("\nhead test: tag = %d, machine_index = %d\n", new_pkt.head.tag, new_pkt.head.machine_index);
-        new_pkt.pkt_index = pkt_index;
-        new_pkt.counter = counter;
-        /*init random num generator*/
-        srand(time(NULL));
-        new_pkt.rand_num = rand() % 1000000 + 1; //generates random number 1 to 1 mil
-        //new_pkt.acks = last_in_order_arr;  //do we need to memcpy the array everytime?
-        memcpy(new_pkt.acks, last_in_order_arr, sizeof(last_in_order_arr));
+            /*save the new_pkt in received_pkts grid*/
 
-        //set new_pkt->payloads = random 1400 bytes?
-    
-        /*save the new_pkt in received_pkts grid*/
-
-        /* multicast/send the packet*/
-        char buffer[sizeof(new_pkt)]; //save the new data pkt into buffer before sending it
-        memcpy(buffer, &new_pkt, sizeof(new_pkt)); //copies sizeof(new_pkt) bytes into buffer from new_pkt
-        sendto( ss, buffer, strlen(buffer), 0, (struct sockaddr *)&send_addr, sizeof(send_addr) );
-       
-        printf("Machine#%d sent: \n\thead: tag = %d, machine_index = %d\n\tpkt_index = %d\n\trand_num = %d\n", machine_index, new_pkt.head.tag, new_pkt.head.machine_index, pkt_index, new_pkt.rand_num);
-        printf("\nsizeof(new_pkt) = %ld\n", sizeof(new_pkt));
-        burst--;
-    }   
-
-    /*listen for incoming packets*/
-
-    /*receive packets: */
-    /*switch case based on tag*/
-    
-    /*CAST THE PACKET BASED ON THE TAG*/
-
-    //header received_pkt;
-    //receiving
-    
-    //how long do we want to be recieving pkts for? until we dont receive one in x amnt of time?
-    for(;;)
-    {
-        read_mask = mask;
-        //timeout.tv_sec = 1; //what do these 2 lines do?
-        //timeout.tv_usec = 0;
-        num = select( FD_SETSIZE, &read_mask, NULL, NULL, NULL); //&timeout); //event triggered
-        if ( num > 0 ) {
-            if ( FD_ISSET( sr, &read_mask) ) { //recieved some type of packet 
-                data_pkt rec; //header head; 
-                bytes = recv( sr, &rec, sizeof(rec), 0); //read into a data_pkt by default 
-                printf("\nbytes = %d\n", bytes);
-                printf("received pkt with header:\n\ttag = %d\n\tmachine_index = %d\n", rec.head.tag, rec.head.machine_index);
-            }
+            /* multicast/send the packet*/
+            char buffer[sizeof(new_pkt)]; //save the new data pkt into buffer before sending it
+            memcpy(buffer, &new_pkt, sizeof(new_pkt)); //copies sizeof(new_pkt) bytes into buffer from new_pkt
+            bytes = sendto( ss, buffer, sizeof(buffer), 0, (struct sockaddr *)&send_addr, sizeof(send_addr) );
+            printf("\nbytes = %d\n", bytes);
+            printf("Machine#%d sent: \n\thead: tag = %d, machine_index = %d\n\tpkt_index = %d\n\trand_num = %d\n", machine_index, new_pkt.head.tag, new_pkt.head.machine_index, pkt_index, new_pkt.rand_num);
+            printf("\nsizeof(new_pkt) = %ld\n", sizeof(new_pkt));
+            burst--;
         }
-    }
 
-    /*
-    for(;;)
-    {
-        read_mask = mask;
-        num = select( FD_SETSIZE, &read_mask, &write_mask, &excep_mask, NULL);
-        if (num > 0) {
-            if ( FD_ISSET( sr, &read_mask) ) {
-                bytes = recv( sr, mess_buf, sizeof(mess_buf), 0 );
-                mess_buf[bytes] = 0;
-                printf( "received : %s\n", mess_buf );
-            } 
+        //send final packet
+        if ( pkt_index == num_packets ) {
+            //send final pkt
+            pkt_index++;
+            final_pkt final_msg;
+            header head;
+            head.tag = 2;
+            head.machine_index = machine_index;
+            final_msg.head = head;
+            final_msg.pkt_index = pkt_index;
+            char buffer[sizeof(final_msg)]; //save the final pkt into buffer before sending it
+            memcpy(buffer, &final_msg, sizeof(final_msg));
+            bytes = sendto( ss, buffer, sizeof(buffer), 0, (struct sockaddr *)&send_addr, sizeof(send_addr) );
+            printf("\nSent final pkt: bytes = %d\n", bytes);
         }
-    }
-    */
 
+
+        
+        //listen for incoming packets or timeout
+        
+        //how long do we want to be recieving pkts for? until we dont receive one in x amnt of time? possibly receiving in bursts too
+        for(;;)
+        {   
+            read_mask = mask;
+            //timeout.tv_sec = 1; //what do these 2 lines do?
+            //timeout.tv_usec = 0;
+            num = select( FD_SETSIZE, &read_mask, NULL, NULL, NULL); //&timeout); //event triggered
+            if ( num > 0 ) { 
+                if ( FD_ISSET( sr, &read_mask) ) { //recieved some type of packet  
+                    char buf[sizeof(data_pkt)];
+                    header *head;
+                    bytes = recv( sr, buf, sizeof(buf), 0); //readinto a data_pkt by default 
+                    printf("\nbytes = %d\n", bytes);
+                    head = (header*)buf;
+                    printf("received header:\n\ttag = %d\n\tmachine_index = %d\n", head->tag, head->machine_index);
+                
+                    //switch case based on head.tag
+                    
+                    switch ( head->tag ) {
+                        case 0: ; //data_pkt
+                            data_pkt *msg;
+                            msg = (data_pkt*)buf;
+                            printf("\ndata_pkt");
+                            break;
+                        case 1: //feedback
+                            printf("\nfb_pkt");
+                            break;
+                        case 2: //final_pkt
+                            printf("\nfinal_pkt");
+                            break;
+                    } 
+                     
+                }   
+            }   
+        
+            //timeout - break
+        } 
+        //send feedback if nack_counter > 0
+    }
     return 0;
 }
