@@ -1,5 +1,6 @@
 #include "net_include.h"
 #include "packets.h"
+#include <time.h>
 
 #define MAX_MACHINES 10
 
@@ -26,6 +27,13 @@ int main(int argc, char **argv)
     int                num_machines;
     int                loss_rate;
 
+    int                counter = 0;
+    int                pkt_index = 0; 
+    /*START*/
+
+    
+   
+    
     /*handle arguments*/
     if ( argc != 5 ) {
         printf("Usage: mcast <num_packets> <machine_index> <num_machines> <loss_rate>\n");
@@ -56,6 +64,8 @@ int main(int argc, char **argv)
     
     printf("num_packets = %d, machine_index = %d, num_machines = %d, loss_rate = %d\n", num_packets, machine_index, num_machines, loss_rate);
 
+    /*create last_in_order array of size num_machines*/
+    int last_in_order_arr[num_machines];
 
     mcast_addr = 225 << 24 | 0 << 16 | 1 << 8 | 1; /* (225.0.1.1) */
 
@@ -107,6 +117,57 @@ int main(int argc, char **argv)
     FD_ZERO( &excep_mask );
     FD_SET( sr, &mask );
     FD_SET( (long)0, &mask );    /* stdin */
+    
+    //cannot proceed until start_mcast is called
+    
+    /*TRANSFER*/
+
+    //sending a packet send_packet():
+    int burst = 15;
+    while ( burst > 0 && pkt_index < num_packets ) {
+        pkt_index++;
+        counter++;
+        //create header & a data_pkt 
+        header data_head;
+        data_head.tag = 0;
+        data_head.machine_index = machine_index;
+        data_pkt new_pkt;
+        new_pkt.head = data_head;
+        new_pkt.pkt_index = pkt_index;
+        new_pkt.counter = counter;
+        /*init random num generator*/
+        srand(time(NULL));
+        new_pkt.rand_num = rand() % 1000000 + 1; //generates random number 1 to 1 mil
+        //new_pkt.acks = last_in_order_arr;  //do we need to memcpy the array everytime?
+        memcpy(new_pkt.acks, last_in_order_arr, sizeof(last_in_order_arr));
+
+        //set new_pkt->payloads = random 1400 bytes?
+    
+        /*save the new_pkt in received_pkts grid*/
+
+        /*multicast, send the packet*/
+        char buffer[sizeof(new_pkt)]; //save the new data pkt into buffer before sending it
+        memcpy(buffer, &new_pkt, sizeof(new_pkt)); //copies sizeof(new_pkt) bytes into buffer from new_pkt
+        sendto( ss, buffer, strlen(buffer), 0, (struct sockaddr *)&send_addr, sizeof(send_addr) );
+        printf("Sent: \n\tpkt_index = %d,\n\trand_num = %d\n", pkt_index, new_pkt.rand_num);
+        burst--;
+    }   
+
+    /*listen for incoming packets*/
+
+    /*receive packets: */
+    /*switch case based on tag*/
+    
+    /*CAST THE PACKET BASED ON THE TAG*/
+
+    //header received_pkt;
+    //receiving
+
+
+
+
+
+
     for(;;)
     {
         read_mask = mask;
