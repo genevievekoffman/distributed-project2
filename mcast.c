@@ -63,7 +63,7 @@ int main(int argc, char **argv)
     int last_in_order_arr[num_machines];
 
     mcast_addr = 225 << 24 | 0 << 16 | 1 << 8 | 1; /* (225.0.1.1) */
-
+    //need 225.1.1.50
     sr = socket(AF_INET, SOCK_DGRAM, 0); /* socket for receiving */
     if (sr<0) {
         perror("Mcast: socket");
@@ -112,7 +112,12 @@ int main(int argc, char **argv)
     FD_SET( (long)0, &mask );    /* stdin */
     
     //cannot proceed until start_mcast is called
-    
+   
+    //wait until receieves a trigger from mcast 
+    int n = select( FD_SETSIZE, &read_mask, NULL, NULL, NULL);
+    printf("\nn = %d\n", n);
+    //waiting for start_mcast to trigger event 
+
     /*TRANSFER*/
     
     //while loop - condition?
