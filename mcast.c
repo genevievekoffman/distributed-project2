@@ -29,6 +29,7 @@ int main(int argc, char **argv)
     int                counter = 0;
     int                pkt_index = 0; 
 
+    int                n;
     /*START*/
     
     /*handle arguments*/
@@ -118,14 +119,14 @@ int main(int argc, char **argv)
     FD_SET( sr, &mask );
     FD_SET( (long)0, &mask );    /* stdin */
     
-    //cannot proceed until start_mcast is called
-   
-    //wait until receieves a trigger from mcast 
+    //cannot proceed until start_mcast is called & sends out a ~start signal 
     char start_buf[1];
-    int n = recv( sr, start_buf, sizeof(start_buf), 0);
+    recv( sr, start_buf, sizeof(start_buf), 0);
 
     /*TRANSFER*/
     
+    srand(time(NULL));
+
     //while loop - condition?
     for(;;) {
         //sending a packet send_packet():
@@ -139,14 +140,13 @@ int main(int argc, char **argv)
             data_head.tag = 0;
             data_head.machine_index = machine_index;
             data_pkt new_pkt;
-            new_pkt.head = data_head;
-            //printf("\nhead test: tag = %d, machine_index = %d\n", new_pkt.head.tag, new_pkt.head.machine_index);
+            new_pkt.head = data_head; 
             new_pkt.pkt_index = pkt_index;
             new_pkt.counter = counter;
             /*init random num generator*/
-            srand(time(NULL));
+            //srand(time(NULL));
             new_pkt.rand_num = rand() % 1000000 + 1; //generates random number 1 to 1 mil
-            //new_pkt.acks = last_in_order_arr;  //do we need to memcpy the array everytime?
+            //do we need to memcpy the array everytime?
             memcpy(new_pkt.acks, last_in_order_arr, sizeof(last_in_order_arr));
 
             //set new_pkt->payloads = random 1400 bytes?
@@ -156,8 +156,7 @@ int main(int argc, char **argv)
             /* multicast/send the packet*/
             char buffer[sizeof(new_pkt)]; //save the new data pkt into buffer before sending it
             memcpy(buffer, &new_pkt, sizeof(new_pkt)); //copies sizeof(new_pkt) bytes into buffer from new_pkt
-            bytes = sendto( ss, buffer, sizeof(buffer), 0, (struct sockaddr *)&send_addr, sizeof(send_addr) );
-            printf("\nbytes = %d\n", bytes);
+            bytes = sendto( ss, buffer, sizeof(buffer), 0, (struct sockaddr *)&send_addr, sizeof(send_addr) ); 
             printf("Machine#%d sent: \n\thead: tag = %d, machine_index = %d\n\tpkt_index = %d\n\trand_num = %d\n", machine_index, new_pkt.head.tag, new_pkt.head.machine_index, pkt_index, new_pkt.rand_num);
             printf("\nsizeof(new_pkt) = %ld\n", sizeof(new_pkt));
             burst--;
@@ -194,18 +193,44 @@ int main(int argc, char **argv)
                 if ( FD_ISSET( sr, &read_mask) ) { //recieved some type of packet  
                     char buf[sizeof(data_pkt)];
                     header *head;
-                    bytes = recv( sr, buf, sizeof(buf), 0); //readinto a data_pkt by default 
-                    printf("\nbytes = %d\n", bytes);
+                    bytes = recv( sr, buf, sizeof(buf), 0); //readinto a data_pkt by default  
                     head = (header*)buf;
+                    
+                    /* in the case that a machine received a packet from itself, ignore it*/ 
+                    if ( head->machine_index == machine_index ) break;
+
                     printf("received header:\n\ttag = %d\n\tmachine_index = %d\n", head->tag, head->machine_index);
-                
-                    //switch case based on head.tag
+
+                    /* switch case based on head.tag */
                     
                     switch ( head->tag ) {
                         case 0: ; //data_pkt
-                            data_pkt *msg;
-                            msg = (data_pkt*)buf;
+                            data_pkt *pkt;
+                            pkt = (data_pkt*)buf;
                             printf("\ndata_pkt");
+                            
+                            /* check if we can store pkt */
+    
+                            if ( (n = lio_arr[head->machine_index]) < pkt->pkt_index && pkt->pkt_index < n + WINDOW_SIZE ) {
+                                printf("\n\t%d < %d < %d ... so we can store it!\n", n, pkt->pkt_index, n + WINDOW_SIZE);
+                                
+                                //if the pkt_index == 1: we are receiving a proccess's first pkt (special case)
+                                if ( pkt->pkt_index == 1 ) {
+                                    //save its counter in write_arr
+                                    write_arr[head->machine_index] = pkt->counter;
+                                }
+
+                                //now, store it in our grid (received_pkts) 
+                                received_pkts[pkt->pkt_index % WINDOW_SIZE][head->machine_index - 1] = pkt; 
+                                printf("\n\tstoring the pkt into grid at [%d][%d]\n", pkt->pkt_index % WINDOW_SIZE, head->machine_index - 1);
+                                /* hi Tsige, the code above stores it with a 1 offset like in project 1 (so first packet would go in the 1st index 
+                                 *not 0th) ... we can always change that but thats how I set it for now */
+                            }
+
+                            /* now check if the pkt is in order */
+
+                            /* check the pkt's acks --> we might be able to delete our packets from grid */
+
                             break;
                         case 1: ; //feedback
                             printf("\nfb_pkt");
@@ -233,8 +258,7 @@ int main(int argc, char **argv)
                             // if process is done sending data_pkts then check acks (we have their final packet)
                             
                             if (write_arr[head->machine_index - 1] == -1) {
-                                // check if ack is greater then current ack
-                                int n;
+                                // check if ack is greater then current ack 
                                 if (  (n = fb_pkt->acks[machine_index - 1]) > acks_received[head->machine_index -1]) {
                                         acks_received[head->machine_index - 1] = n;
                                 }
@@ -242,7 +266,16 @@ int main(int argc, char **argv)
                             break;
                         case 2: //final_pkt
                             printf("\nfinal_pkt");
-                            break;
+                            final_pkt *fp = (final_pkt*)buf; 
+                            /* check if we can store it yet */
+                            if ( (n = lio_arr[head->machine_index]) < fp->pkt_index && fp->pkt_index < n + WINDOW_SIZE ) {
+                                //TODO: set [machine_index - 1, pkt_index mod window] in received pkts = -1 (MARKS FINAL PKT) //refer design
+                                received_pkts[fp->pkt_index % WINDOW_SIZE][head->machine_index - 1] = (data_pkt*)-1;
+                                printf("\n\t%d < %d < %d ... so we can store it!\n", n, fp->pkt_index, n + WINDOW_SIZE);
+                            }
+            
+    
+                            break;  
                     } 
                      
                 }   
