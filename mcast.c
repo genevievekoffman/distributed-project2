@@ -3,6 +3,8 @@
 #include <time.h>
 
 #define MAX_MACHINES 10
+#define WINDOW_SIZE 20
+#define BURST 15
 
 int main(int argc, char **argv)
 {
@@ -59,6 +61,11 @@ int main(int argc, char **argv)
     
     printf("num_packets = %d, machine_index = %d, num_machines = %d, loss_rate = %d\n", num_packets, machine_index, num_machines, loss_rate);
 
+    data_pkt*          received_pkts[WINDOW_SIZE][num_machines];
+    int                write_arr[num_machines];
+    int                acks_received[num_machines];
+    int                lio_arr[num_machines]; //last in order array
+
     /*create last_in_order array of size num_machines*/
     int last_in_order_arr[num_machines];
 
@@ -114,9 +121,8 @@ int main(int argc, char **argv)
     //cannot proceed until start_mcast is called
    
     //wait until receieves a trigger from mcast 
-    int n = select( FD_SETSIZE, &read_mask, NULL, NULL, NULL);
-    printf("\nn = %d\n", n);
-    //waiting for start_mcast to trigger event 
+    char start_buf[1];
+    int n = recv( sr, start_buf, sizeof(start_buf), 0);
 
     /*TRANSFER*/
     
@@ -201,8 +207,38 @@ int main(int argc, char **argv)
                             msg = (data_pkt*)buf;
                             printf("\ndata_pkt");
                             break;
-                        case 1: //feedback
+                        case 1: ; //feedback
                             printf("\nfb_pkt");
+                            //TODO: need to test handeling fb_pkt
+                            feedback_pkt *fb_pkt;
+                            fb_pkt = (feedback_pkt*)buf;
+                            // checking number of nacks for our machine
+                            int num_nacks = fb_pkt->nacks[0][machine_index-1]; 
+                            
+                            if (num_nacks > 0) {
+                                // ressend nacks
+                                for (int i = 1; i <= num_nacks; i++) {
+                                    // get missing pkt_index
+                                    int missing_index = fb_pkt->nacks[i][machine_index-1];
+                                    data_pkt *missing_pkt = received_pkts[missing_index % WINDOW_SIZE][machine_index-1];
+
+                                    // resend missing packet
+                                    char buffer[sizeof(missing_pkt)];
+                                    memcpy(buffer, missing_pkt, sizeof(*missing_pkt));
+                                    bytes = sendto( ss, buffer, sizeof(buffer), 0,
+                                                (struct sockaddr *)&send_addr, sizeof(send_addr) );
+                                    printf("\nresent nack = %d\n", bytes);
+                                }
+                            }
+                            // if process is done sending data_pkts then check acks (we have their final packet)
+                            
+                            if (write_arr[head->machine_index - 1] == -1) {
+                                // check if ack is greater then current ack
+                                int n;
+                                if (  (n = fb_pkt->acks[machine_index - 1]) > acks_received[head->machine_index -1]) {
+                                        acks_received[head->machine_index - 1] = n;
+                                }
+                            }
                             break;
                         case 2: //final_pkt
                             printf("\nfinal_pkt");

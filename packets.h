@@ -23,10 +23,11 @@ typedef struct dummy_data {
     int payload[BYTES];
 }data_pkt;
 
-typedef struct dummy_nack{
+typedef struct dummy_feedback{
     header head;
     int nacks[MAX_MACHINES][NACK_WINDOW];
-}nack_pkt;
+    int acks[MAX_MACHINES];
+}feedback_pkt;
 
 typedef struct dummy_final{
     header head;
