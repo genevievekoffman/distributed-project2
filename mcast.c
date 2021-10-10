@@ -66,9 +66,16 @@ int main(int argc, char **argv)
     int                write_arr[num_machines];
     int                acks_received[num_machines];
     int                lio_arr[num_machines]; //last in order array
+    int                expected_pkt[num_machines]; //expected pkt index
+    int                nack_counter[num_machines];
 
     /*create last_in_order array of size num_machines*/
     int last_in_order_arr[num_machines];
+
+    //initialize excpected_pkt array
+    for (int i = 0; i < num_machines; i++) {
+        expected_pkt[i] = 1;
+    }
 
     mcast_addr = 225 << 24 | 0 << 16 | 1 << 8 | 1; /* (225.0.1.1) */
     //need 225.1.1.50
@@ -224,11 +231,39 @@ int main(int argc, char **argv)
                                 received_pkts[pkt->pkt_index % WINDOW_SIZE][head->machine_index - 1] = pkt; 
                                 printf("\n\tstoring the pkt into grid at [%d][%d]\n", pkt->pkt_index % WINDOW_SIZE, head->machine_index - 1);
                                 /* hi Tsige, the code above stores it with a 1 offset like in project 1 (so first packet would go in the 1st index 
-                                 *not 0th) ... we can always change that but thats how I set it for now */
+                                 *not 0th) ... we can always change that but thats how I set it for now 
+                                 yup that looks good! - tsige*/
+                            } else {
+                                break;
                             }
 
                             /* now check if the pkt is in order */
 
+                            if (pkt->pkt_index == (n = expected_pkt[head->machine_index - 1])) {
+                                // packet is what we excpect
+                                printf("packet index %d is in order\n", n);
+                                expected_pkt[head->machine_index - 1]++;
+                            } else if(pkt->pkt_index > n) {
+                                // packets were missed
+                                
+                                // hey gen idk what you were thinkg since its not in the design 
+                                // -- so I made the nack counter and array per machine
+                                // we can talk about it tho if you think its unnecessary
+                                
+                                // increase 
+                                nack_counter[head->machine_index - 1] += (pkt->pkt_index - n);
+                                expected_pkt[head->machine_index - 1] = n+1;
+
+                                printf("%d packet's are missed\n", nack_counter[head->machine_index - 1]);
+                            } else {
+                                // nack was received
+                                nack_counter[head->machine_index - 1]--;
+                                printf("nacked packet %d is recieved\n", pkt->pkt_index);
+                            }
+
+                            if (pkt->pkt_index == lio_arr[head->machine_index - 1] + 1) {
+                                /* check if we can write */
+                            }
                             /* check the pkt's acks --> we might be able to delete our packets from grid */
 
                             break;
