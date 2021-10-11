@@ -249,7 +249,8 @@ int main(int argc, char **argv)
                         case 0: ; //data_pkt
                             data_pkt *pkt;
                             pkt = malloc(sizeof(data_pkt));
-                            pkt = (data_pkt*)buf;
+                            memcpy(pkt, buf, sizeof(data_pkt));
+                            //pkt = (data_pkt*)buf;
                             printf("\ndata_pkt");
                             
                             /* check if we can store pkt */
@@ -328,6 +329,11 @@ int main(int argc, char **argv)
                                     data_pkt *write_pkt = received_pkts[row][col];
                                     printf("\ngoing to write pkt at index [%d][%d] to file\n", row, col);
                                     
+                                    // TODO: this check isn't happening at the right time
+                                    if(write_pkt == NULL) {
+                                        printf("wait.. doesn't exist");
+                                        break;
+                                    }
                                     printf("\n...that packet contains: rand_num = %d\n", write_pkt->rand_num);
 
                                     //TODO: write it to the file
