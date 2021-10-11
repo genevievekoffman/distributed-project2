@@ -34,7 +34,9 @@ int main(int argc, char **argv)
     int                counter = 0;
     int                pkt_index = 0; 
 
-    int                n;
+    int                n, nwritten; 
+    FILE               *fw; // pointer to dest file, which we write 
+    
     /*START*/
     
     /*handle arguments*/
@@ -138,7 +140,13 @@ int main(int argc, char **argv)
     FD_ZERO( &mask ); 
     FD_SET( sr, &mask );
     FD_SET( (long)0, &mask );    /* stdin */
-    
+
+    /* open or create the destination file for writing */
+    if((fw = fopen("destination.txt", "w")) == NULL) {
+        perror("fopen");
+        exit(0);
+    }
+
     //cannot proceed until start_mcast is called & sends out a ~start signal 
     char start_buf[1];
     recv( sr, start_buf, sizeof(start_buf), 0);
@@ -310,22 +318,25 @@ int main(int argc, char **argv)
                                 printf("nacked packet %d is recieved\n", pkt->pkt_index);
                             }
 
+                            //debugging
+                            printf("lio_arr = ");
+                            for(i=0;i<num_machines;i++) printf(" %d ",lio_arr[i]); 
+                            printf("pkt->pkt_index = %d, lio_arr[head->machine_index - 1] = %d, lio_arr[head->machine_index - 1] + 1 = %d\n", pkt->pkt_index, lio_arr[head->machine_index - 1], lio_arr[head->machine_index - 1] + 1);
+
                             if (pkt->pkt_index == lio_arr[head->machine_index - 1] + 1) {
                                 /* check if we can write */
-                                //how do we know if we can start writing? -> we have atleast 1 msg from every proces in top row 
+                                //we can start writing when we have atleast 1 msg from every proces in top row 
                                 printf("\n\tChecking if we can write..."); 
-                                printf("write_arr = %d, %d, %d", write_arr[0], write_arr[1], write_arr[2]);
-
-                                //if there is a 0 in write_arr -> cannot write yet
-                                //attempts to write
-                                int min_machine = get_min_index( write_arr, num_machines );
-                                while ( min_machine != -1 ) {
+                                printf("write_arr = ");
+                                for(i = 0; i < num_machines; i++) printf("%d,", write_arr[i]);
                                 
+                                /*Attempting to write to file, if there is a 0 in write_arr, we cant write */ 
+                                int min_machine = get_min_index( write_arr, num_machines );
+                                while ( min_machine != -1 ) { 
                                     printf("\n\twriting ...\n");
                                    
                                     int col = min_machine;
                                     int row = (lio_arr[min_machine] + 1) % WINDOW_SIZE; //since its the last written we need to + 1
-
                                     data_pkt *write_pkt = received_pkts[row][col];
                                     printf("\ngoing to write pkt at index [%d][%d] to file\n", row, col);
                                     
@@ -335,15 +346,32 @@ int main(int argc, char **argv)
                                         break;
                                     }
                                     printf("\n...that packet contains: rand_num = %d\n", write_pkt->rand_num);
+                                    //write it to the file
+                                    nwritten = fwrite(&(write_pkt->rand_num), 1, sizeof(write_pkt->rand_num), fw); 
+                                    printf("\nnwritten = %d\n", nwritten);
 
-                                    //TODO: write it to the file
+
                                     //update the lio_arr 
                                     lio_arr[min_machine] = write_pkt->pkt_index;
+                                    printf("lio_arr = ");
+                                    for(i=0;i<num_machines;i++) printf(" %d ",lio_arr[i]);
                                     //we can set write_pkt to null, only if its not our machines msgs
                                     if ( col + 1 != machine_index ) {
+                                        printf("\nwe can set write_pkt to null\n");
+                                        //we can delete the packet and set it = null & check out the next address
+                                        free(write_pkt);
                                         write_pkt = NULL;
-                                        //not using min pointer anymore since we have a way of getting to the slot directly
-
+                                   
+                                    for (i = 0; i < WINDOW_SIZE; i++) {
+                                        for (j = 0; j < num_machines; j++) {
+                                            if(received_pkts[i][j] == NULL) {
+                                                printf("[ ]");
+                                            } else {
+                                                printf("[%d]", received_pkts[i][j]->rand_num);//, *received_pkts[i][j]);
+                                            }
+                                        }
+                                            printf("\n");
+                                    }
                                         //finding the spot of the next minimum
                                         int next_row = (row + 1) % WINDOW_SIZE;
                                         write_pkt = received_pkts[next_row][col];
