@@ -11,6 +11,7 @@
 bool check_write(int arr[], int sz);
 int get_min_index(int arr[], int sz);
 void print_grid(int rows, int cols, data_pkt *grid[rows][cols]); 
+bool check_store(int lio_arr[], data_pkt *pkt);
 
 int main(int argc, char **argv)
 {
@@ -83,13 +84,17 @@ int main(int argc, char **argv)
     //initialize excpected_pkt array
     for (int i = 0; i < num_machines; i++) {
         expected_pkt[i] = 1;
+        acks_received[i] = 0;
+        lio_arr[i] = 0;
+        write_arr[i] = 0;
+        nack_counter[i] = 0;
     }
 
     //initialize received_pkts
     int i,j;
     for (i = 0; i < WINDOW_SIZE; i++) {
-       for (j = 0; j < num_machines; j++) {       
-          received_pkts[i][j] = NULL;
+       for (j = 0; j < num_machines; j++) {
+            received_pkts[i][j] = NULL;
         } 
     }
 
@@ -208,10 +213,12 @@ int main(int argc, char **argv)
             head.machine_index = machine_index;
             final_msg->head = head;
             final_msg->pkt_index = pkt_index;
+            final_msg->counter = -1;
             char buffer[sizeof(*final_msg)]; //save the final pkt into buffer before sending it
             memcpy(buffer, final_msg, sizeof(*final_msg));
             bytes = sendto( ss, buffer, sizeof(buffer), 0, (struct sockaddr *)&send_addr, sizeof(send_addr) );
             printf("\nSent final pkt: bytes = %d\n", bytes);
+            received_pkts[pkt_index % WINDOW_SIZE][machine_index - 1] = (data_pkt*)final_msg;
         }
 
         //listen for incoming packets or timeout
@@ -251,22 +258,19 @@ int main(int argc, char **argv)
                             printf("\n(data_pkt)\n");
                             
                             /* check if we can store pkt */
-    
-                            if ( (n = lio_arr[head->machine_index]) < pkt->pkt_index && pkt->pkt_index < n + WINDOW_SIZE ) {
-                                printf("\n\t%d < %d < %d -> so we can store it!\n", n, pkt->pkt_index, n + WINDOW_SIZE);
-                                
-                                //if the pkt_index == 1: we are receiving a proccess's first pkt (special case)
-                                if ( pkt->pkt_index == 1 ) {
-                                    //save its counter in write_arr
-                                    write_arr[head->machine_index - 1] = pkt->counter;
-                                }
-
-                                //now, store it in our grid (received_pkts) 
-                                received_pkts[pkt->pkt_index % WINDOW_SIZE][head->machine_index - 1] = pkt; 
-                                printf("\n\tstoring the pkt into grid at [%d][%d]\n", pkt->pkt_index % WINDOW_SIZE, head->machine_index - 1);
-                            } else {
+                            if ( !check_store(lio_arr, pkt) ) {
                                 break;
                             }
+                            
+                            //if the pkt_index == 1: we are receiving a proccess's first pkt (special case)
+                            if ( pkt->pkt_index == 1 ) {
+                                //save its counter in write_arr
+                                write_arr[head->machine_index - 1] = pkt->counter;
+                            }
+
+                            //now, store it in our grid (received_pkts) 
+                            received_pkts[pkt->pkt_index % WINDOW_SIZE][head->machine_index - 1] = pkt; 
+                            printf("\n\tstoring the pkt into grid at [%d][%d]\n", pkt->pkt_index % WINDOW_SIZE, head->machine_index - 1);
 
                             print_grid(WINDOW_SIZE, num_machines, received_pkts); 
                             /* now check if the pkt is in order */
@@ -314,15 +318,8 @@ int main(int argc, char **argv)
                                     int row = (lio_arr[min_machine] + 1) % WINDOW_SIZE; //since its the last written we need to + 1
                                     data_pkt *write_pkt = received_pkts[row][col];
                                     printf("\ngoing to write pkt at index [%d][%d] to file\n", row, col);
-                                   
-                                    /*REACHING A FP CAUSES A SEG FAULT HERE*/
-                                    /* case: we've reached a final packet within our grid */
-                                    if ((data_pkt*)write_pkt == (data_pkt*)-1) { //could be a final_pkt
-                                        printf("\n\tREACHED FINAL PKT");
-                                    } else {
-                                        printf("\n\tnot a final pkt\n");
-                                    }
-
+                                                                       
+                                    if (write_pkt->counter == -1) return 0; //exit_case()
 
                                     printf("\n...that packet contains: rand_num = %d & counter = %d\n", write_pkt->rand_num, write_pkt->counter);
                                     
@@ -355,8 +352,6 @@ int main(int argc, char **argv)
                                         printf("done writing\n");
                                         write_arr[col] = 0;                                     //need to make sure we update this... 
                                         min_machine = get_min_index( write_arr, num_machines );
-                                    } else if ( write_pkt == (data_pkt*)-1 ) { //final pkt
-
                                     } else { //there is another pkt to write
                                         write_arr[col] = write_pkt->counter; //update the write_arr to hold its counter 
                                         min_machine = get_min_index( write_arr, num_machines );
@@ -405,13 +400,14 @@ int main(int argc, char **argv)
                             final_pkt *fp;
                             fp = malloc(sizeof(final_pkt));
                             memcpy(fp, buf, sizeof(final_pkt));
-
+                            
                             /* check if we can store it yet */
-                            if ( (n = lio_arr[head->machine_index]) < fp->pkt_index && fp->pkt_index < n + WINDOW_SIZE ) {
-                                //TODO: set [machine_index - 1, pkt_index mod window] in received pkts = -1 (MARKS FINAL PKT) //refer design
-                                received_pkts[fp->pkt_index % WINDOW_SIZE][head->machine_index - 1] = (data_pkt*)-1;
-                                printf("\n\t%d < %d < %d ... so we can store it!\n", n, fp->pkt_index, n + WINDOW_SIZE);
+                            if ( !check_store(lio_arr, (data_pkt*)fp) ) {
+                                break;
                             }
+
+                            received_pkts[fp->pkt_index % WINDOW_SIZE][head->machine_index - 1] = (data_pkt*)fp;
+                            printf("\n\t%d < %d < %d ... so we can store it!\n", n, fp->pkt_index, n + WINDOW_SIZE);
                             break;  
                     }
                     print_grid(WINDOW_SIZE, num_machines, received_pkts);
@@ -430,10 +426,14 @@ int main(int argc, char **argv)
 int get_min_index(int arr[], int sz) {
     int min_index = 0; 
     int i;
+    
     for ( i = 0; i < sz; i++ ) {
+        if ( arr[min_index] == -1 ) { //adopt the next index
+          min_index = i;
+        }
         if ( arr[i] == 0 ) 
             return -1; //returns -1 if the arr contains a value 0  
-        if ( arr[i] < arr[min_index] )  
+        if ( arr[i] != -1 && arr[i] < arr[min_index] )  
             min_index = i; 
     } 
     return min_index;
@@ -446,7 +446,7 @@ void print_grid(int rows, int cols, data_pkt *grid[rows][cols]) {
         for (j = 0; j < cols; j++) {
             if(grid[i][j] == NULL) { 
                 printf("[ ]");
-            } else if ((data_pkt*)grid[i][j] == (data_pkt*)-1) {
+            } else if (grid[i][j]->counter == -1) {
                 printf("[FP]");
             } else {
                 //trying to access rand_num when it's not empty
@@ -455,4 +455,13 @@ void print_grid(int rows, int cols, data_pkt *grid[rows][cols]) {
         }
         printf("\n");
     }
+}
+
+bool check_store(int lio_arr[], data_pkt *pkt) {
+    int n;
+    if ( (n = lio_arr[pkt->head.machine_index]) < pkt->pkt_index && pkt->pkt_index < n + WINDOW_SIZE ) { 
+        printf("\n\t%d < %d < %d -> so we can store it!\n", n, pkt->pkt_index, n + WINDOW_SIZE);
+        return true;
+    }
+    return false;
 }

@@ -32,4 +32,5 @@ typedef struct dummy_feedback{
 typedef struct dummy_final{
     header head;
     int pkt_index;
+    int counter; 
 }final_pkt;
