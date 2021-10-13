@@ -26,7 +26,7 @@ int main(int argc, char **argv)
     fd_set             read_mask;
     int                bytes;
     int                num;
-    //struct timeval     timeout;
+    struct timeval     timeout;
     //char               mess_buf[MAX_MESS_LEN];
 
     int                num_packets;
@@ -47,7 +47,6 @@ int main(int argc, char **argv)
         exit(0);
     }
 
-    //can we assume that we won't have duplicate machines joining with the same machine index? 
     char *str = argv[1];
     num_packets = atoi(str);
 
@@ -198,7 +197,7 @@ int main(int argc, char **argv)
             char buffer[sizeof(*new_pkt)]; //save the new data pkt into buffer before sending it
             memcpy(buffer, new_pkt, sizeof(*new_pkt)); //copies sizeof(new_pkt) bytes into buffer from new_pkt
             bytes = sendto( ss, buffer, sizeof(buffer), 0, (struct sockaddr *)&send_addr, sizeof(send_addr) ); 
-            printf("\nI(machine#%d) sent: \n\thead: tag = %d, machine_index = %d\n\tpkt_index = %d\n\trand_num = %d\n, counter = %d\n\t", machine_index, new_pkt->head.tag, new_pkt->head.machine_index, pkt_index, new_pkt->rand_num, new_pkt->counter);
+            printf("\nI(machine#%d) sent: \n\thead: tag = %d, machine_index = %d\n\tpkt_index = %d\n\trand_num = %d\n\tcounter = %d\n", machine_index, new_pkt->head.tag, new_pkt->head.machine_index, pkt_index, new_pkt->rand_num, new_pkt->counter);
             printf("\naddress of new_pkt = %p\n", new_pkt);
             burst--;
         }
@@ -230,9 +229,9 @@ int main(int argc, char **argv)
         for(;;)
         {   
             read_mask = mask;
-            //timeout.tv_sec = 1; //what do these 2 lines do?
-            //timeout.tv_usec = 0;
-            num = select( FD_SETSIZE, &read_mask, NULL, NULL, NULL); //&timeout); //event triggered
+            timeout.tv_sec = 1; 
+            timeout.tv_usec = 0;
+            num = select( FD_SETSIZE, &read_mask, NULL, NULL, &timeout); //event triggered
             if ( num > 0 ) { 
                 if ( FD_ISSET( sr, &read_mask) ) { //recieved some type of packet  
                     char buf[sizeof(data_pkt)];
@@ -413,9 +412,10 @@ int main(int argc, char **argv)
                     print_grid(WINDOW_SIZE, num_machines, received_pkts);
                      
                 }   
-            }   
-        
-            //timeout - break
+            } else {
+                printf("\n ...timeout");
+                /* how do we want to do this: send a nack or resend our msgs? */
+            }
         } 
         //send feedback if nack_counter > 0
     }
