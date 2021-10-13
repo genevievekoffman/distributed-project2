@@ -13,8 +13,8 @@ int get_min_index(int arr[], int sz);
 void print_grid(int rows, int cols, data_pkt *grid[rows][cols]); 
 bool check_store(int lio_arr[], data_pkt *pkt);
 void check_acks(data_pkt *pkt, int *acks_received, int machine_index);
-int get_min_ack_received(int *acks_received, int machine_index, int num_machines);
-bool only_min(int *acks_received, int machine_index, int num_machines);
+int get_min_ack_received(int acks_received[], int machine_index, int num_machines);
+bool only_min(int acks_received[], int machine_index, int num_machines);
 
 int main(int argc, char **argv)
 {
@@ -167,7 +167,7 @@ int main(int argc, char **argv)
     //while loop - condition?
     for(;;) {
         //sending a packet send_packet():
-        int burst = 15; 
+        int burst = 1; 
         while ( burst > 0 && pkt_index < num_packets ) { 
             pkt_index++;
             counter++;
@@ -182,7 +182,7 @@ int main(int argc, char **argv)
             new_pkt->head = data_head; 
             new_pkt->pkt_index = pkt_index;
             new_pkt->counter = counter;
-            
+
             new_pkt->rand_num = rand() % 1000000 + 1; //generates random number 1 to 1 mil 
             memcpy(new_pkt->acks, last_in_order_arr, sizeof(last_in_order_arr));
 
@@ -200,8 +200,11 @@ int main(int argc, char **argv)
             char buffer[sizeof(*new_pkt)]; //save the new data pkt into buffer before sending it
             memcpy(buffer, new_pkt, sizeof(*new_pkt)); //copies sizeof(new_pkt) bytes into buffer from new_pkt
             bytes = sendto( ss, buffer, sizeof(buffer), 0, (struct sockaddr *)&send_addr, sizeof(send_addr) ); 
-            printf("\nI(machine#%d) sent: \n\thead: tag = %d, machine_index = %d\n\tpkt_index = %d\n\trand_num = %d\n\tcounter = %d\n", machine_index, new_pkt->head.tag, new_pkt->head.machine_index, pkt_index, new_pkt->rand_num, new_pkt->counter);
-            printf("\naddress of new_pkt = %p\n", new_pkt);
+            printf("\nI(machine#%d) sent: \n\thead: tag = %d, machine_index = %d\n\tpkt_index = %d\n\trand_num = %d\n\tcounter = %d", machine_index, new_pkt->head.tag, new_pkt->head.machine_index, pkt_index, new_pkt->rand_num, new_pkt->counter);
+            printf("\n\tacks = ");
+            for(i=0;i<num_machines;i++) printf(" %d ", new_pkt->acks[i]);
+            printf("\n");
+            //printf("\naddress of new_pkt = %p\n", new_pkt);
             burst--;
         }
 
@@ -287,14 +290,10 @@ int main(int argc, char **argv)
 
                             if (pkt->pkt_index == (n = expected_pkt[head->machine_index - 1])) {
                                 // packet is what we excpect
-                                printf("packet index %d is in order\n", n);
+                                //printf("packet index %d is in order\n", n);
                                 expected_pkt[head->machine_index - 1]++;
                             } else if(pkt->pkt_index > n) {
                                 // packets were missed
-                                
-                                // hey gen idk what you were thinkg since its not in the design 
-                                // -- so I made the nack counter and array per machine
-                                // we can talk about it tho if you think its unnecessary
                                 
                                 // increase 
                                 nack_counter[head->machine_index - 1] += (pkt->pkt_index - n);
@@ -310,11 +309,11 @@ int main(int argc, char **argv)
                             
                             /* check the incoming pkt's acks & update our acks_received */
                             check_acks(pkt, acks_received, machine_index);
-                            if (only_min(&acks_received, machine_index, num_machines)) {
+                            if (only_min(acks_received, machine_index, num_machines)) {
                                 //get min
-                                int shift_to_pkt = get_min_ack_received(&acks_received, machine_index, num_machines);
+                                acks_received[machine_index - 1] = get_min_ack_received(acks_received, machine_index, num_machines);
                                 //shift to min^
-                                printf("SHIFT");
+                                printf("SHIFT to %d", acks_received[machine_index - 1] );
 
                             }
 
@@ -338,11 +337,11 @@ int main(int argc, char **argv)
                                     int col = min_machine;
                                     int row = (lio_arr[min_machine] + 1) % WINDOW_SIZE; //since its the last written we need to + 1
                                     data_pkt *write_pkt = received_pkts[row][col];
-                                    printf("\ngoing to write pkt at index [%d][%d] to file\n", row, col);
+                                    //printf("\ngoing to write pkt at index [%d][%d] to file\n", row, col);
                                                                        
                                     if (write_pkt->counter == -1) return 0; //exit_case()
 
-                                    printf("\n...that packet contains: rand_num = %d & counter = %d\n", write_pkt->rand_num, write_pkt->counter);
+                                    //printf("\n...that packet contains: rand_num = %d & counter = %d\n", write_pkt->rand_num, write_pkt->counter);
                                     
                                     /* write it to the file */
                                     char buf_write[sizeof(write_pkt->rand_num)];
@@ -353,6 +352,8 @@ int main(int argc, char **argv)
                                     lio_arr[min_machine] = write_pkt->pkt_index;
                                     printf("lio_arr = ");
                                     for(i=0;i<num_machines;i++) printf(" %d ",lio_arr[i]);
+                                    printf("\tacks_received = ");
+                                    for(i=0;i<num_machines;i++) printf(" %d ",acks_received[i]);
                                     //we can set write_pkt to null, only if its not our machines msgs
                                     if ( col + 1 != machine_index ) {
                                         printf("\nwe can set write_pkt to null\n");
@@ -362,6 +363,7 @@ int main(int argc, char **argv)
                                         received_pkts[row][col] = NULL;
                                     }
 
+                                    printf("\n");
                                     print_grid(WINDOW_SIZE, num_machines, received_pkts);
                                     
                                     //finding the spot of the next minimum
@@ -482,7 +484,7 @@ void print_grid(int rows, int cols, data_pkt *grid[rows][cols]) {
 bool check_store(int lio_arr[], data_pkt *pkt) {
     int n;
     if ( (n = lio_arr[pkt->head.machine_index]) < pkt->pkt_index && pkt->pkt_index < n + WINDOW_SIZE ) { 
-        printf("\n\t%d < %d < %d -> so we can store it!\n", n, pkt->pkt_index, n + WINDOW_SIZE);
+        //printf("\n\t%d < %d < %d -> so we can store it!\n", n, pkt->pkt_index, n + WINDOW_SIZE);
         return true;
     }
     return false;
@@ -491,7 +493,7 @@ bool check_store(int lio_arr[], data_pkt *pkt) {
 /* Check acks of an incoming pkt, we might be able to update acks in received_acks */
 void check_acks ( data_pkt *pkt, int *acks_received, int machine_index ) {
     int new_ack = pkt->acks[machine_index];
-    printf("\n\tpkt->acks[machine_index] = %d", pkt->acks[machine_index]);
+    printf("\n\tpkt->acks[machine_index] = %d\n", pkt->acks[machine_index]);
     //adopt the new ack if its greater than the old one
     if ( new_ack > acks_received[machine_index] ) {
         printf("\n\tnew_ack = %d > %d (old ack)\n", new_ack, acks_received[machine_index]);
@@ -500,8 +502,8 @@ void check_acks ( data_pkt *pkt, int *acks_received, int machine_index ) {
 }
 
 /* checks to see whether any of the other machines have the same min ack meaning we can't shift the window */
-bool only_min(int *acks_received, int machine_index, int num_machines) {
-    int *min_ack = acks_received[machine_index]; //the overall min ack of our machine
+bool only_min(int acks_received[], int machine_index, int num_machines) {
+    int min_ack = acks_received[machine_index]; //the current min ack of our machine
     for(int i = 0; i < num_machines; i++) {
         if ( !(i == machine_index - 1) ) {
             if ( acks_received[i] == min_ack ) return false; //another machine has the same min ack
@@ -512,10 +514,10 @@ bool only_min(int *acks_received, int machine_index, int num_machines) {
 
 
 /* implement get_min_ack_received */
-int get_min_ack_received(int *acks_received, int machine_index, int num_machines) { 
-    acks_received[machine_index - 1] = -1;
+int get_min_ack_received(int acks_received[], int machine_index, int num_machines) { 
+    acks_received[machine_index - 1] = -1; // so that the current min ack will be ignored
     
-    int ret_min = get_min_index(acks_received, sizeof(acks_received) ); //will return -1 if all of them = -1 or the min pkt to shift to 
+    int ret_min = get_min_index(acks_received, num_machines ); //will return -1 if all of them = -1 or the min pkt to shift to 
     acks_received[machine_index-1] = acks_received[ret_min];
     return acks_received[machine_index-1];
 }
