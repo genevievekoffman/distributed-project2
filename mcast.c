@@ -6,6 +6,7 @@
 
 #define MAX_MACHINES 10
 #define WINDOW_SIZE 10 //20
+#define RECV_THRESHOLD 5
 
 bool check_write(int arr[], int sz);
 int get_min_index(int arr[], int sz);
@@ -37,6 +38,7 @@ int main(int argc, char **argv)
     int                loss_rate;
     int                counter = 0;
     int                pkt_index = 0; 
+    int                received_count = 0;
 
     int                n, nwritten; 
     FILE               *fw; // pointer to dest file, which we write 
@@ -162,7 +164,7 @@ int main(int argc, char **argv)
     srand ( time(NULL) );
 
         //sending a packet send_packet():
-        int burst = 5; //make sure burst < window size  
+        int burst = 2; //make sure burst < window size  
         while ( burst > 0 && pkt_index < num_packets && pkt_index < acks_received[machine_index - 1] + WINDOW_SIZE ) { 
             pkt_index++;
             counter++;
@@ -235,6 +237,8 @@ int main(int argc, char **argv)
             num = select( FD_SETSIZE, &read_mask, NULL, NULL, &timeout); //event triggered
             if ( num > 0 ) { 
                 if ( FD_ISSET( sr, &read_mask) ) { //recieved some type of packet  
+                    received_count++;
+
                     char buf[sizeof(data_pkt)];
                     header *head;
                     bytes = recv( sr, buf, sizeof(buf), 0); 
@@ -348,11 +352,11 @@ int main(int argc, char **argv)
                                     int col = min_machine;
                                     int row = (lio_arr[min_machine] + 1) % WINDOW_SIZE; //since its the last written we need to + 1
                                     data_pkt *write_pkt = received_pkts[row][col];
-                                    printf("\ngoing to write pkt at index [%d][%d] to file\n", row, col);
+                                    //printf("\ngoing to write pkt at index [%d][%d] to file\n", row, col);
                                                                        
                                     if (write_pkt->counter == -1) return 0; //exit_case()
 
-                                    printf("\n...that packet contains: rand_num = %d & counter = %d\n", write_pkt->rand_num, write_pkt->counter);
+                                    //printf("\n...that packet contains: rand_num = %d & counter = %d\n", write_pkt->rand_num, write_pkt->counter);
                                     
                                     /* write it to the file */
                                     char buf_write[sizeof(write_pkt->rand_num)];
@@ -368,7 +372,7 @@ int main(int argc, char **argv)
                                     for(i=0;i<num_machines;i++) printf(" %d ",acks_received[i]);
                                     //we can set write_pkt to null, only if its not our machines msgs
                                     if ( col + 1 != machine_index ) {
-                                        printf("\nwe can set write_pkt to null\n");
+                                        //printf("\nwe can set write_pkt to null\n");
                                         //we can delete the packet and set it = null & check out the next address
                                         free(write_pkt);
                                         write_pkt = NULL; 
@@ -441,6 +445,74 @@ int main(int argc, char **argv)
 
                             received_pkts[fp->pkt_index % WINDOW_SIZE][head->machine_index - 1] = (data_pkt*)fp;
                             printf("\n\t%d < %d < %d ... so we can store it!\n", n, fp->pkt_index, n + WINDOW_SIZE);
+                            
+                            /* check if we can write */
+                 
+                            pkt = received_pkts[fp->pkt_index % WINDOW_SIZE][head->machine_index - 1]; 
+                            if (pkt ->pkt_index == lio_arr[head->machine_index - 1] + 1) {
+                                //if we just got the msg that's +1 from lio this means we might have a 0 in write_arr, need to update it
+                                write_arr[head->machine_index - 1] = pkt->counter;
+
+                                //we can start writing when we have atleast 1 msg from every proces in top row 
+                                printf("\n\tChecking if we can write...write_arr = ");
+                                for(i = 0; i < num_machines; i++) printf("%d ", write_arr[i]);
+                                
+                                //Attempting to write to file, if there is a 0 in write_arr, we cant write  
+                                int min_machine = get_min_index( write_arr, num_machines );
+
+                                while ( min_machine != -2 ) { 
+                                    printf("\n\twriting ...\n");
+                                   
+                                    int col = min_machine;
+                                    int row = (lio_arr[min_machine] + 1) % WINDOW_SIZE; //since its the last written we need to + 1
+                                    data_pkt *write_pkt = received_pkts[row][col];
+                                    //printf("\ngoing to write pkt at index [%d][%d] to file\n", row, col);
+                                                                       
+                                    if (write_pkt->counter == -1) return 0; //exit_case()
+
+                                    //printf("\n...that packet contains: rand_num = %d & counter = %d\n", write_pkt->rand_num, write_pkt->counter);
+                                    
+                                    /* write it to the file */
+                                    char buf_write[sizeof(write_pkt->rand_num)];
+                                    sprintf(buf_write, "%d", write_pkt->rand_num); //converts int to a str before writing it
+                                    fprintf(fw, "%2d, %8d, %8d\n", write_pkt->head.machine_index, write_pkt->pkt_index, write_pkt->rand_num);
+                                    fflush(fw);
+
+                                    //update the lio_arr 
+                                    lio_arr[min_machine] = write_pkt->pkt_index;
+                                    printf("lio_arr = ");
+                                    for(i=0;i<num_machines;i++) printf(" %d ",lio_arr[i]);
+                                    printf("\tacks_received = ");
+                                    for(i=0;i<num_machines;i++) printf(" %d ",acks_received[i]);
+                                    //we can set write_pkt to null, only if its not our machines msgs
+                                    if ( col + 1 != machine_index ) {
+                                        //printf("\nwe can set write_pkt to null\n");
+                                        //we can delete the packet and set it = null & check out the next address
+                                        free(write_pkt);
+                                        write_pkt = NULL; 
+                                        received_pkts[row][col] = NULL;
+                                    }
+
+                                    printf("\n");
+                                    print_grid(WINDOW_SIZE, num_machines, received_pkts);
+                                    
+                                    //finding the spot of the next minimum
+                                    int next_row = (row + 1) % WINDOW_SIZE;
+                                    write_pkt = received_pkts[next_row][col];
+                                
+                                    //in case there is no pkt here ... done writing
+                                    if ( write_pkt == NULL ) {
+                                        printf("done writing\n");
+                                        write_arr[col] = 0; 
+                                        min_machine = get_min_index( write_arr, num_machines );
+                                    } else { //there is another pkt to write
+                                        write_arr[col] = write_pkt->counter; //update the write_arr to hold its counter 
+                                        min_machine = get_min_index( write_arr, num_machines );
+                                    }
+                                        
+                                }
+                            }
+
                             break;  
                     }
                     print_grid(WINDOW_SIZE, num_machines, received_pkts);
@@ -450,6 +522,69 @@ int main(int argc, char **argv)
                 printf("\n ...timeout");
                 fflush(0);
                 /* how do we want to do this: send a nack or resend our msgs? */
+            }
+
+            // check our recieved_count and recv_threshold to determine if we need to send a burst
+            if (received_count%RECV_THRESHOLD == 0) {
+                // send a burst
+                int burst = 2; //make sure burst < window size  
+                while ( burst > 0 && pkt_index < num_packets && pkt_index < acks_received[machine_index - 1] + WINDOW_SIZE ) { 
+                    pkt_index++;
+                    counter++;
+            
+                    //create header & a data_pkt 
+                    header data_head;
+                    data_head.tag = 0;
+                    data_head.machine_index = machine_index;
+                    data_pkt *new_pkt;
+                   
+                    new_pkt = malloc(sizeof(data_pkt));
+                    new_pkt->head = data_head; 
+                    new_pkt->pkt_index = pkt_index;
+                    new_pkt->counter = counter;
+
+                    new_pkt->rand_num = rand() % 1000000 + 1; //generates random number 1 to 1 mil 
+                    memcpy(new_pkt->acks, lio_arr, sizeof(lio_arr));
+
+                    //set new_pkt->payloads = random 1400 bytes?
+                    
+                    /*save the new_pkt in received_pkts grid*/
+                    received_pkts[pkt_index % WINDOW_SIZE][machine_index - 1] = new_pkt;
+                    //printf("\nstoring our packet(#%d) at [%d][%d]\n", pkt_index, pkt_index % WINDOW_SIZE, machine_index - 1);
+                    
+                    //if its the first ever packet being sent, set write_arr = 1 at its spot(**unless its final pkt ...)
+                    if ( pkt_index == 1 ) {
+                        write_arr[machine_index - 1] = 1; 
+                    }
+                    
+                    /* send the packet */
+                    char buffer[sizeof(*new_pkt)]; //save the new data pkt into buffer before sending it
+                    memcpy(buffer, new_pkt, sizeof(*new_pkt)); //copies sizeof(new_pkt) bytes into buffer from new_pkt
+                    bytes = sendto( ss, buffer, sizeof(buffer), 0, (struct sockaddr *)&send_addr, sizeof(send_addr) ); 
+                    printf("\nI(machine#%d) sent: \n\thead: tag = %d, machine_index = %d\n\tpkt_index = %d\n\trand_num = %d\n\tcounter = %d", machine_index, new_pkt->head.tag, new_pkt->head.machine_index, pkt_index, new_pkt->rand_num, new_pkt->counter);
+                    printf("\n\tacks = ");
+                    for(i=0;i<num_machines;i++) printf(" %d ", new_pkt->acks[i]);
+                    burst--;
+                }
+
+                //send final packet
+                if ( pkt_index == num_packets ) {
+                    pkt_index++;
+                    final_pkt *final_msg;
+                    final_msg = malloc(sizeof(final_msg));
+                    header head;
+                    head.tag = 2;
+                    head.machine_index = machine_index;
+                    final_msg->head = head;
+                    final_msg->pkt_index = pkt_index;
+                    final_msg->counter = -1;
+                    char buffer[sizeof(*final_msg)]; //save the final pkt into buffer before sending it
+                    memcpy(buffer, final_msg, sizeof(*final_msg));
+                    bytes = sendto( ss, buffer, sizeof(buffer), 0, (struct sockaddr *)&send_addr, sizeof(send_addr) );
+                    printf("\nSent final pkt: bytes = %d\n", bytes);
+                    received_pkts[pkt_index % WINDOW_SIZE][machine_index - 1] = (data_pkt*)final_msg;
+                }
+
             }
         } 
         //send feedback if nack_counter > 0
@@ -463,6 +598,7 @@ int get_min_index(int arr[], int sz) {
     int neg_count = 0;
     
     for ( i = 0; i < sz; i++ ) {
+        /*
         if ( !( arr[min_index] == -1 ) ) {
             if ( arr[i] == 0 ) return -2; //returns -2 if the arr contains a value 0 
             if ( arr[i] != -1 && arr[i] < arr[min_index] ) min_index = i;
@@ -470,7 +606,7 @@ int get_min_index(int arr[], int sz) {
             //-1
             neg_count++;
         }
-        /*
+    */
         if ( arr[min_index] == -1 ) { //adopt the next index
           min_index = i;
         } //THIS MAKES NO SENSE
@@ -478,7 +614,6 @@ int get_min_index(int arr[], int sz) {
             return -2; //returns -2 if the arr contains a value 0  
         if ( arr[i] != -1 && arr[i] < arr[min_index] )  
             min_index = i;  
-    */
     }
     printf("\nget_min_index is returning = %d\n", min_index);
     if(neg_count == sz) min_index = -1; //incase they are all -1
