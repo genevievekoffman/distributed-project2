@@ -13,6 +13,8 @@ int get_min_index(int arr[], int sz);
 void print_grid(int rows, int cols, data_pkt *grid[rows][cols]); 
 bool check_store(int lio_arr[], data_pkt *pkt);
 void check_acks(data_pkt *pkt, int *acks_received, int machine_index);
+int get_min_ack_received(int *acks_received, int machine_index, int num_machines);
+bool only_min(int *acks_received, int machine_index, int num_machines);
 
 int main(int argc, char **argv)
 {
@@ -308,7 +310,13 @@ int main(int argc, char **argv)
                             
                             /* check the incoming pkt's acks & update our acks_received */
                             check_acks(pkt, acks_received, machine_index);
+                            if (only_min(&acks_received, machine_index, num_machines)) {
+                                //get min
+                                int shift_to_pkt = get_min_ack_received(&acks_received, machine_index, num_machines);
+                                //shift to min^
+                                printf("SHIFT");
 
+                            }
 
                             printf("lio_arr = ");
                             for(i=0;i<num_machines;i++) printf(" %d ",lio_arr[i]); 
@@ -324,7 +332,7 @@ int main(int argc, char **argv)
                                 
                                 /*Attempting to write to file, if there is a 0 in write_arr, we cant write */ 
                                 int min_machine = get_min_index( write_arr, num_machines );
-                                while ( min_machine != -1 ) { 
+                                while ( min_machine != -2 ) { 
                                     printf("\n\twriting ...\n");
                                    
                                     int col = min_machine;
@@ -446,7 +454,7 @@ int get_min_index(int arr[], int sz) {
           min_index = i;
         }
         if ( arr[i] == 0 ) 
-            return -1; //returns -1 if the arr contains a value 0  
+            return -2; //returns -1 if the arr contains a value 0  
         if ( arr[i] != -1 && arr[i] < arr[min_index] )  
             min_index = i; 
     } 
@@ -491,11 +499,23 @@ void check_acks ( data_pkt *pkt, int *acks_received, int machine_index ) {
     }
 }
 
+/* checks to see whether any of the other machines have the same min ack meaning we can't shift the window */
+bool only_min(int *acks_received, int machine_index, int num_machines) {
+    int *min_ack = acks_received[machine_index]; //the overall min ack of our machine
+    for(int i = 0; i < num_machines; i++) {
+        if ( !(i == machine_index - 1) ) {
+            if ( acks_received[i] == min_ack ) return false; //another machine has the same min ack
+        }
+    }
+    return true;
+}
+
+
 /* implement get_min_ack_received */
-//create a min_ack int which will be the starting window (min pkt index that EEVERY machine has acked)
-//...
-//if(machine index == 1) min = acks_received[1]
-//else min = acksreceived[0]
-//for loop
-//if !(i == machine index) {
-// if acksreceived[i] == acksreceived[machine idnex] return 0 (or we know its not possible to shift window/delete pkts
+int get_min_ack_received(int *acks_received, int machine_index, int num_machines) { 
+    acks_received[machine_index - 1] = -1;
+    
+    int ret_min = get_min_index(acks_received, sizeof(acks_received) ); //will return -1 if all of them = -1 or the min pkt to shift to 
+    acks_received[machine_index-1] = acks_received[ret_min];
+    return acks_received[machine_index-1];
+}
