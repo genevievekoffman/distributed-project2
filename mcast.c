@@ -12,6 +12,7 @@ bool check_write(int arr[], int sz);
 int get_min_index(int arr[], int sz);
 void print_grid(int rows, int cols, data_pkt *grid[rows][cols]); 
 bool check_store(int lio_arr[], data_pkt *pkt);
+void check_acks(data_pkt *pkt, int *acks_received, int machine_index);
 
 int main(int argc, char **argv)
 {
@@ -272,6 +273,14 @@ int main(int argc, char **argv)
                             printf("\n\tstoring the pkt into grid at [%d][%d]\n", pkt->pkt_index % WINDOW_SIZE, head->machine_index - 1);
 
                             print_grid(WINDOW_SIZE, num_machines, received_pkts); 
+                            
+
+                             //checks if we can adopt the pkts counter
+                            if (pkt->counter > counter ) {
+                                counter = pkt->counter;
+                                printf("\nUpdated our counter!\n");
+                            }
+
                             /* now check if the pkt is in order */
 
                             if (pkt->pkt_index == (n = expected_pkt[head->machine_index - 1])) {
@@ -295,6 +304,11 @@ int main(int argc, char **argv)
                                 nack_counter[head->machine_index - 1]--;
                                 printf("nacked packet %d is recieved\n", pkt->pkt_index);
                             }
+
+                            
+                            /* check the incoming pkt's acks & update our acks_received */
+                            check_acks(pkt, acks_received, machine_index);
+
 
                             printf("lio_arr = ");
                             for(i=0;i<num_machines;i++) printf(" %d ",lio_arr[i]); 
@@ -465,3 +479,23 @@ bool check_store(int lio_arr[], data_pkt *pkt) {
     }
     return false;
 }
+
+/* Check acks of an incoming pkt, we might be able to update acks in received_acks */
+void check_acks ( data_pkt *pkt, int *acks_received, int machine_index ) {
+    int new_ack = pkt->acks[machine_index];
+    printf("\n\tpkt->acks[machine_index] = %d", pkt->acks[machine_index]);
+    //adopt the new ack if its greater than the old one
+    if ( new_ack > acks_received[machine_index] ) {
+        printf("\n\tnew_ack = %d > %d (old ack)\n", new_ack, acks_received[machine_index]);
+        acks_received[machine_index] = new_ack;
+    }
+}
+
+/* implement get_min_ack_received */
+//create a min_ack int which will be the starting window (min pkt index that EEVERY machine has acked)
+//...
+//if(machine index == 1) min = acks_received[1]
+//else min = acksreceived[0]
+//for loop
+//if !(i == machine index) {
+// if acksreceived[i] == acksreceived[machine idnex] return 0 (or we know its not possible to shift window/delete pkts
