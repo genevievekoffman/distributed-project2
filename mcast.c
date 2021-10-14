@@ -16,6 +16,9 @@ bool check_store(int lio_arr[], data_pkt *pkt);
 int get_min_ack_received(int acks_received[], int machine_index, int num_machines);
 bool only_min(int acks_received[], int machine_index, int num_machines);
 bool exit_case(int acks_received[], int write_arr[], int num_machines);
+void fill_nacks(feedback_pkt *fb, int rows, int cols, data_pkt *grid[rows][cols], int *nack_counter);
+void print_fb_pkt(feedback_pkt *fb, int num_machines);
+int find_min_ack ( int *received_acks, int machine_index, int num_machines);
 
 int main(int argc, char **argv)
 {
@@ -344,19 +347,6 @@ int main(int argc, char **argv)
                                 
                                 //Attempting to write to file, if there is a 0 in write_arr, we cant write  
                                 int min_machine = get_min_index( write_arr, num_machines );
-                                
-            /*
-                                if (min_machine == -2 ) {
-                                    //there is a 0 in write_arr -> cannot write
-                                } else if ( min_machine == -1 ) { 
-                                   //written everything possible -> exit case()- make sure both write_arr contains all -1 & acks_received is all -1s 
-                                } else {
-                                    write();
-                                    //otherwise min_machine will return the INDEX holding the min value in write_arr (between: 0 ... num_machines-1)
-                                }
-            */
-
-
                                 while ( min_machine != -2 ) { 
                                     printf("\n\twriting ...\n");
                                    
@@ -413,16 +403,60 @@ int main(int argc, char **argv)
                                 }
 
                             }
+
+                            
+                            /* check if we can send a FB pkt right after we have just handled a data pkt */
+                            if ( received_count % RECV_THRESHOLD == RECV_THRESHOLD - 1) { //every RECV_THRESHOLD pkts --> we can always change how to detmerine this
+                                printf("\n\n\treceived_count = %d ... so we will send a FB pkt\n\n", received_count); 
+                                //do i need to allocate mem every time we creat one and then just free it after i send it?
+                                header fb_head;
+                                fb_head.tag = 1; //FB_PKT;
+                                fb_head.machine_index = machine_index;
+                                feedback_pkt fb;
+                                fb.head = fb_head;
+                                memcpy(fb.acks, lio_arr, sizeof(lio_arr));
+                                //fill fb.nacks based on nack_counter
+                                fill_nacks(&fb, WINDOW_SIZE, num_machines, received_pkts, nack_counter); 
+                                
+                                char buffer[sizeof(feedback_pkt)];
+                                memcpy(buffer, &fb, sizeof(fb));
+                                nwritten = sendto( ss, buffer, sizeof(buffer), 0, (struct sockaddr *)&send_addr, sizeof(send_addr) );
+                                printf("\n\nSENT A FB PKT of size = %d\n\n", nwritten);
+                                print_fb_pkt(&fb, num_machines);
+                            }
+
                             break;
                         case 1: ; //feedback
-                            printf("\n(feedback_pkt)\n");
-                            //TODO: need to test handeling fb_pkt
+                            printf("\ncase: feedback_pkt\n");
                             feedback_pkt *fb_pkt;
                             fb_pkt = (feedback_pkt*)buf;
-                            // checking number of nacks for our machine
-                            int num_nacks = fb_pkt->nacks[0][machine_index-1]; 
+                            print_fb_pkt(fb_pkt, num_machines);
                             
+                            //check the feedback pkts acks -> might be able to delete some of our pkts 
+                            
+                            int new_ack = fb_pkt->acks[machine_index - 1];
+                            printf("\nnew_ack = %d", new_ack);
+                            if ( new_ack > acks_received[fb_pkt->head.machine_index - 1] ) {
+                                acks_received[fb_pkt->head.machine_index - 1] = new_ack;
+                                int acks_min = find_min_ack(acks_received, machine_index, num_machines);
+                                //int get_min_ack = get_min_ack_received(acks_received, machine_index, num_machines);
+                                printf("\nget_min_ack = %d", acks_min);
+                                if (acks_min == acks_received[machine_index - 1] ) { //cant shift
+                                    printf("\ncannot shift our window");
+                                } else {
+                                    printf("\nwe can shift to %d\n", acks_min);
+                                    acks_received[machine_index - 1] = acks_min; //update the total ack
+                                    printf("\n\tour updated acks_received = ");
+                                    for(int i=0;i<num_machines;i++) printf(" %d ", acks_received[i]);
+                                    //TODO: shift window by deleting the pkts before that pkt_index(acks_min) and sending more pkts
+                                }
+                            }
+
+
+                            int num_nacks = fb_pkt->nacks[0][machine_index-1]; 
+                            printf("\nnum_nacks = %d\n", num_nacks); 
                             if (num_nacks > 0) {
+                                printf("\nresending nacks\n");
                                 // ressend nacks
                                 for (int i = 1; i <= num_nacks; i++) {
                                     // get missing pkt_index
@@ -435,14 +469,6 @@ int main(int argc, char **argv)
                                     bytes = sendto( ss, buffer, sizeof(buffer), 0,
                                                 (struct sockaddr *)&send_addr, sizeof(send_addr) );
                                     printf("\nresent nack = %d\n", bytes);
-                                }
-                            }
-                            // if process is done sending data_pkts then check acks (we have their final packet)
-                            
-                            if (write_arr[head->machine_index - 1] == -1) {
-                                // check if ack is greater then current ack 
-                                if (  (n = fb_pkt->acks[machine_index - 1]) > acks_received[head->machine_index -1]) {
-                                        acks_received[head->machine_index - 1] = n;
                                 }
                             }
                             break;
@@ -701,3 +727,60 @@ bool exit_case(int acks_received[], int write_arr[], int num_machines) {
     }
     return true;
 }
+
+void fill_nacks(feedback_pkt *fb, int rows, int cols, data_pkt *grid[rows][cols], int *nack_counter) { 
+    //fill in fb->nacks based off nack_counter 
+    //make sure we fill it so that when we exit this method, it is still updated in the main method
+    //num_machines is cols!
+    printf("\nFILLING FB->NACKS\n");
+}
+
+void print_fb_pkt(feedback_pkt *fb, int num_machines) {
+    printf("\theader: tag = %d, machine_index = %d, nacks = not handled yet\n", fb->head.tag, fb->head.machine_index);
+    printf("\tacks = ");
+    for(int i = 0; i < num_machines; i++) printf(" %d ", fb->acks[i]);
+}
+
+/* returns the value of the smallest ack */
+int find_min_ack ( int *received_acks, int machine_index, int num_machines) {
+    int min = -1;
+    printf("\nfind_min_ack():\n");
+    printf("\treceived_acks = ");
+    for(int z = 0; z < num_machines; z++) printf(" %d ", received_acks[z]);
+    for(int i = 0; i < num_machines; i++) {
+        //we skip our own index & any -1's
+        if ( i != (machine_index - 1) && received_acks[i] != -1 ) {
+            //cannot shift bc a pkt hasn't received anything grater than our last ack
+            if ( received_acks[i] == received_acks[machine_index - 1] ) return received_acks[machine_index - 1];
+            if ( min == -1 ) min = received_acks[i]; //when it's the first valid value, adopt it
+            else if ( received_acks[i] < min ) min = received_acks[i];
+        }
+    }
+    printf("\treturning min = %d\n", min);
+    return min;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
