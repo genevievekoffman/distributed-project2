@@ -430,6 +430,23 @@ int main(int argc, char **argv)
                             //check the feedback pkts acks -> might be able to delete some of our pkts 
                             /* DOES NOT CONSIDER WHEN IT'S -1*/
                             int new_ack = fb_pkt->acks[machine_index - 1];
+                       
+                            //when we see that a pkt's ack = our min ack (lio_arr)
+                            //then send the first two pkts again
+                            if ( fb_pkt->acks[machine_index-1] == acks_received[machine_index-1] ) 
+                            {
+                                //send last pkt
+                                data_pkt *temp = received_pkts[pkt_index % WINDOW_SIZE][machine_index-1]; 
+                                char buffer[sizeof(data_pkt)];
+                                printf("\ntag = %d, pkt_index = %d\n", temp->head.tag, temp->pkt_index);
+                                if(temp->head.tag == 2) memcpy(buffer, temp, sizeof(final_pkt));
+                                else memcpy(buffer, temp, sizeof(data_pkt));
+                                bytes = sendto( ss, buffer, sizeof(buffer), 0, (struct sockaddr *)&send_addr, sizeof(send_addr) );
+                                printf("\nre sent our last pkt bc of inactivity\n");
+                            }
+
+                            printf("\tbefore acks_received = ");
+                            for(i=0;i<num_machines;i++) printf(" %d ",acks_received[i]);
                             printf("\nnew_ack = %d", new_ack);
                             if ( new_ack > acks_received[fb_pkt->head.machine_index - 1] ) { // || new_ack == -1 (cus then if find_min_ack returns -1 -> call exit case)
                                 acks_received[fb_pkt->head.machine_index - 1] = new_ack;
@@ -467,6 +484,9 @@ int main(int argc, char **argv)
                                     /*DO WE NEED TO SEND SHIFT_BY # PKTS HERE?*/
                                 }
                             }
+
+                            printf("\tafter acks_received = ");
+                            for(i=0;i<num_machines;i++) printf(" %d ",acks_received[i]);
 
                             int num_nacks = fb_pkt->nacks[0][machine_index-1]; 
                             printf("\nnum_nacks they are missing from us = %d\n", num_nacks); 
@@ -523,8 +543,7 @@ int main(int argc, char **argv)
                             //check if we can write
 
                                 //Attempting to write to file, if there is a 0 in write_arr, we cant write  
-                                int min_machine;// = get_min_index( write_arr, num_machines );
-
+                                int min_machine;
                                 while ( ( min_machine = get_min_index( write_arr, num_machines ) ) != -2 && (write_arr[min_machine] != -1)) 
                                 {                                    
                                     printf("\n\t524: the final pkt told us we can cont writing ...\n");
@@ -590,7 +609,6 @@ int main(int argc, char **argv)
                 fflush(0);
                 
                 /* SEND FB PKT HERE */
-                // send feedback
                     header fb_head;
                     fb_head.tag = 1; //FB_PKT;
                     fb_head.machine_index = machine_index;
@@ -610,6 +628,14 @@ int main(int argc, char **argv)
                     nwritten = sendto( ss, buffer, sizeof(buffer), 0, (struct sockaddr *)&send_addr, sizeof(send_addr) );
                     printf("\n\nSENT A FB PKT of size = %d\n\n", nwritten);
                     print_fb_pkt(fb, num_machines);
+            
+                    //also resend our last sent pkt (pkt_index)
+                    data_pkt *resend_pkt = received_pkts[pkt_index % WINDOW_SIZE][machine_index-1];
+                    printf("\nresending our last sent pkt_index: %d", pkt_index);
+                    char buf[sizeof(data_pkt)];
+                    memcpy(buf, resend_pkt, sizeof(data_pkt));
+                    nwritten = sendto( ss, buf, sizeof(buf), 0, (struct sockaddr *)&send_addr, sizeof(send_addr) );
+
             }
 
             /*check our recieved_count and recv_threshold to determine if we need to send a burst OR if a certain time passed */
