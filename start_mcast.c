@@ -53,6 +53,6 @@ int main()
 
     char *buf = "start";
     int bytes = sendto( ss, buf, strlen(buf), 0, (struct sockaddr *)&send_addr, sizeof(send_addr) ); 
-    printf("start_mcast sent %d bytes\n", bytes);
+    if ( bytes == 0 ) printf("error");
     return 0;
 }

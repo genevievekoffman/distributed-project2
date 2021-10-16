@@ -27,10 +27,3 @@ typedef struct dummy_feedback{
     int nacks[MAX_MACHINES][NACK_WINDOW];
     int acks[MAX_MACHINES];
 }feedback_pkt;
-/*
-typedef struct dummy_final{
-    header head;
-    int pkt_index;
-    int counter; 
-}final_pkt;
-*/
