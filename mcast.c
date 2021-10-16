@@ -174,13 +174,7 @@ int main(int argc, char **argv)
             pkt_index++;
             counter++;
     
-            //create header & a data_pkt 
-            //header data_head;
-            //data_head = malloc(sizeof(data_head));
-            //data_head.tag = 0;
-            //data_head.machine_index = machine_index;
             data_pkt *new_pkt;
-           
             new_pkt = malloc(sizeof(data_pkt));
             new_pkt->head.tag = 0; 
             new_pkt->head.machine_index = machine_index;
@@ -188,7 +182,6 @@ int main(int argc, char **argv)
             new_pkt->counter = counter;
 
             new_pkt->rand_num = rand() % 1000000 + 1; //generates random number 1 to 1 mil 
-            //memcpy(new_pkt->acks, lio_arr, sizeof(lio_arr));
 
             //set new_pkt->payloads = random 1400 bytes?
             
@@ -214,30 +207,26 @@ int main(int argc, char **argv)
         //send final packet
         if ( pkt_index == num_packets ) {
             pkt_index++;
-            data_pkt *final_msg;
-            final_msg = malloc(sizeof(data_pkt));
             //edge case: machine sends no data_pkts except a final pkt
             if ( pkt_index == 1 )  {
                 write_arr[machine_index - 1] = -1;
                 lio_arr[machine_index - 1] = 1;
             }
-            header *head;
-            head = malloc(sizeof(header));
-            head->tag = 2;
-            head->machine_index = machine_index;
-            final_msg->head = *head;
+            
+            data_pkt *final_msg;
+            final_msg = malloc(sizeof(data_pkt));
+            final_msg->head.tag = 2; //*head;
+            final_msg->head.machine_index = machine_index; 
             final_msg->pkt_index = pkt_index;
             final_msg->counter = -1;
-            char buffer[sizeof(data_pkt)]; //save the final pkt into buffer before sending it
-            memcpy(buffer, final_msg, sizeof(data_pkt));
-            bytes = sendto( ss, buffer, sizeof(buffer), 0, (struct sockaddr *)&send_addr, sizeof(send_addr) );
+            final_msg->rand_num = -1;
+
+            received_pkts[pkt_index % WINDOW_SIZE][machine_index - 1] = final_msg; //(data_pkt*)final_msg;
+            bytes = sendto( ss, final_msg, sizeof(data_pkt), 0, (struct sockaddr *)&send_addr, sizeof(send_addr) );
             printf("\nSent final pkt: bytes = %d\n", bytes);
-            received_pkts[pkt_index % WINDOW_SIZE][machine_index - 1] = (data_pkt*)final_msg;
         }
 
         //listen for incoming packets or timeout
-        
-        //how long do we want to be recieving pkts for? until we dont receive one in x amnt of time? possibly receiving in bursts too
         
         print_grid(WINDOW_SIZE, num_machines, received_pkts);
 
@@ -326,13 +315,14 @@ int main(int argc, char **argv)
                                 printf("\n\t\t\tNACK_WINDOW = %d\n\n", NACK_WINDOW);
                                 if (nack_counter[head->machine_index - 1] >= NACK_WINDOW - 1) {
                                         // send feedback
-                                        header *fb_head;
-                                        fb_head = malloc(sizeof(header));
-                                        fb_head->tag = 1; //FB_PKT;
-                                        fb_head->machine_index = machine_index;
+                                        //header *fb_head;
+                                        //fb_head = malloc(sizeof(header));
+                                        //fb_head->tag = 1; //FB_PKT;
+                                        //fb_head->machine_index = machine_index;
                                         feedback_pkt *fb;
                                         fb = malloc(sizeof(feedback_pkt));
-                                        fb->head = *fb_head;
+                                        fb->head.tag = 1;//*fb_head;
+                                        fb->head.machine_index = machine_index;
                                         memcpy(fb->acks, lio_arr, sizeof(lio_arr));
                                         fill_nacks(fb, WINDOW_SIZE, num_machines, received_pkts, nack_counter, lio_arr, expected_pkt); 
                                         
@@ -341,9 +331,9 @@ int main(int argc, char **argv)
                                         printf("fb nacks = ");
                                         for(i=0;i<num_machines;i++) printf(" %d ",fb->nacks[0][i]); 
 
-                                        char buffer[sizeof(feedback_pkt)];
-                                        memcpy(buffer, fb, sizeof(*fb));
-                                        nwritten = sendto( ss, buffer, sizeof(buffer), 0, (struct sockaddr *)&send_addr, sizeof(send_addr) );
+                                        //char buffer[sizeof(feedback_pkt)];
+                                        //memcpy(buffer, fb, sizeof(*fb));
+                                        nwritten = sendto( ss, fb, sizeof(feedback_pkt), 0, (struct sockaddr *)&send_addr, sizeof(send_addr) );
                                         printf("\n\nSENT A FB PKT of size = %d\n\n", nwritten);
                                         print_fb_pkt(fb, num_machines);
                                 }
@@ -643,13 +633,14 @@ int main(int argc, char **argv)
                 fflush(0);
                 
                 /* SEND FB PKT HERE */
-                    header *fb_head;
-                    fb_head = malloc(sizeof(header));
-                    fb_head->tag = 1; //FB_PKT;
-                    fb_head->machine_index = machine_index;
+                    //header *fb_head;
+                    //fb_head = malloc(sizeof(header));
+                    //fb_head->tag = 1; //FB_PKT;
+                    //fb_head->machine_index = machine_index;
                     feedback_pkt *fb;
                     fb = malloc(sizeof(feedback_pkt));
-                    fb->head = *fb_head;
+                    fb->head.tag = 1; 
+                    fb->head.machine_index = machine_index;
                     memcpy(fb->acks, lio_arr, sizeof(lio_arr));
                     fill_nacks(fb, WINDOW_SIZE, num_machines, received_pkts, nack_counter, lio_arr, expected_pkt); 
                 
@@ -658,9 +649,9 @@ int main(int argc, char **argv)
                     printf("fb nacks = ");
                     for(i=0;i<num_machines;i++) printf(" %d ",fb->nacks[0][i]); 
 
-                    char buffer[sizeof(feedback_pkt)];
-                    memcpy(buffer, fb, sizeof(*fb));
-                    nwritten = sendto( ss, buffer, sizeof(buffer), 0, (struct sockaddr *)&send_addr, sizeof(send_addr) );
+                    //char buffer[sizeof(feedback_pkt)];
+                    //memcpy(buffer, fb, sizeof(*fb));
+                    nwritten = sendto( ss, fb, sizeof(data_pkt), 0, (struct sockaddr *)&send_addr, sizeof(send_addr) );
                     print_fb_pkt(fb, num_machines);
             }
 
@@ -721,15 +712,14 @@ int main(int argc, char **argv)
                     received_pkts[pkt_index % WINDOW_SIZE][machine_index - 1] = final_msg;
                 }
 
-                // send feedback
-                header *fb_head;
-                fb_head = malloc(sizeof(header));
-                fb_head->tag = 1; //FB_PKT;
-                fb_head->machine_index = machine_index;
                 feedback_pkt *fb;
                 fb = malloc(sizeof(feedback_pkt));
-                fb->head = *fb_head;
+                fb->head.tag = 1; //*fb_head;
+                fb->head.machine_index = machine_index; //*fb_head;
+                
+                //should we initi every value in acks to null?or 0? & for nacks
                 memcpy(fb->acks, lio_arr, sizeof(lio_arr));
+                
                 fill_nacks(fb, WINDOW_SIZE, num_machines, received_pkts, nack_counter, lio_arr, expected_pkt); 
                 
                 printf("fb acks = ");
@@ -824,6 +814,7 @@ int get_min_ack_received(int acks_received[], int machine_index, int num_machine
 //we can exit if all ints in write_arr = -1, meaning every msg from every machine is written && acks_received are all -1,
 //meaning every other machine has confirmed they received my final pkt
 bool exit_case(int acks_received[], int write_arr[], int num_machines, int num_packets) {
+    printf("\n\texit case called ... cheking if we can exit\n");
     for (int i = 0; i < num_machines; i++) {
         if ( acks_received[i] != num_packets + 1 || write_arr[i] != -1 ) 
             return false; //something is not finished -> cannot exit
@@ -900,28 +891,4 @@ int find_min_ack ( int *received_acks, int machine_index, int num_machines) {
     printf("\treturning min = %d\n", min);
     return min;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
