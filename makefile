@@ -8,8 +8,8 @@ all: bcast mcast start_mcast
 bcast: bcast.o
 	$(CC) -o bcast bcast.o 
 
-mcast: mcast.o
-	$(CC) -o mcast mcast.o 
+mcast: mcast.o recv_dbg.o
+	$(CC) -o mcast mcast.o recv_dbg.o
 
 start_mcast: start_mcast.o
 	$(CC) -o start_mcast start_mcast.o
