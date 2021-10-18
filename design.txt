@@ -1,0 +1,79 @@
+Tsige & Genevieve Project 2 Design
+
+
+>>can you complete: expected_pkt(line 48)
+
+
+
+We are implementing the Lamport Timestamp protocol. This means that we stamp every packet(message) a processor sends, so every message/packet has a unique Lamport Timestamp. Our LTS is made of the counter and the process ID (we call this the machine_index) and an index (we call it packet_index). 
+
+Our message types(structs):
+    1. data_pkt
+    2. feedback_pkt
+
+    >>both message types contain a header
+    header:
+        -tag (int): tag indicates the type of packet (0 = data packet, 1 = nack, 2 = final packet)
+        -machine_index (int): the index of the process that created this packet 
+
+    data_pkt:
+        -header
+        -packet_index (int): the number of messages sent by this machine_index when created (not including re sent messages) 
+        -counter (int): the number of messages sent in the server when packet was created, according to the machine who created it
+        -random_num (int): picked at time of creation, random number in range 1 - 1 million
+        -payload (array): 1400 bytes of garbage data
+
+    feedback_pkt:
+        -header
+        -acks_array: (array of ints) an index correlates to a machine; values are the last packet_index written into their file
+        -nacks: (2d array of integers) every column correlates to a machine; first row is specifically to hold the number of missing packets being requested in this nack from a machine, the following ints in a specific column are the packet_index of missing packets
+
+mcast_start program: 
+    -process that signals the mcast processes to start
+    -create sockets and connect to host server (copied code from ~cs417/tutorials/week2/mcast.c
+    -multicasts a message to the server then exits
+
+
+>>mcast program<<
+
+fields:
+    -num_machines: (int) the total number of processes in the server (max is 10)
+    -num_packets: (int) the number of packets this process has to create and multicast
+    -loss_rate: the percentage loss rate of messages in this execution
+    -machine_index: the process’s unique index/ID, in between 1 & num_machines 
+        (our code assumes that there will be no 'odd' exceptions to the above stated rules)
+    -pkt_index: (int) init to 0, tracks the amount of ~unique~ packets this process has created & sent 
+    -received_pkts: (2D array of pointers to data_pkts), # of columns is set to num_machines & the rows is our window size (tbd), so every column correlates to a specific machine index & every row is a packet index
+    -lio_arr: (array of ints) size n, keeps track of all the last in order packet_index for each machine that has been written/delivered, all init to 0
+    -expected_pkt: (array of ints); .... all init to 1
+    -acks_received: array of ints; values are pkt indices. each array index correlates to a machine & the value is the cumulative ack from that process 
+    -nack_counter: array of ints; values indicate the amount of missing packets we hold from that machine (index corelates to a machine)
+    -write_arr: array of ints; values are counters. holds the first packet (counter) in the top row of received_pkt; all init to 0
+
+Start:
+    -save starting input into its local fields & set initial values 
+    -set up mcast socket on the specific address/server
+    -wait: cannot proceed before receiving a signal from start_mcast()
+
+    >once a start signal is received, a process will SEND a burst of packets
+
+Transfer:
+    -burst = 15 (for now)
+    -while we haven't sent 15 pkts yet & we still have more to send & our window has available space to store the pkts: send a pkt
+        ~while burst > 0 && pkt_index is between min_acked and min_acked+window_size && (packet_index < num_packets)
+            -increment counter & pkt_index
+            -create a data packet, set its fields (tag = 0, counter, packet_index, etc) & set its acks = last_in_order
+            -save in received_pkts at our machine_index - 1(column), and then the correct row
+            -send the packet
+            -If we just sent the first packet, we should set write_arr[machine_index] = counter (which is 1)
+            -when packet_index == num_packets: send our final packet
+                This handles the case in which a processor sends 0 data packets -> they just need to send a final packet to inform the other processes 
+            -burst--
+
+    Listening for incoming pkts/timeout:
+        case: timeout
+
+        case: received a pkt
+
+
+
