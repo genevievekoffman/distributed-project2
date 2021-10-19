@@ -71,9 +71,87 @@ Transfer:
             -burst--
 
     Listening for incoming pkts/timeout:
+        case: received a pk
+
+            switch based on tag(type of packet):
+                
+                case: data packet
+                        - call check_store()
+                        - store it in received_pkts at index [incoming packets machine_index - 1, correct row: pkt_index mod window] - 1
+                        - if we can store -> check if its in order
+                          comparing pkt_index to expected_num (expected_arr[machine_index-1]):
+                             if pkt_index == expected_num:
+                                means in order, increment the expected_num
+                             if pkt_index > expected_num:
+                                means a packet is missed, increment nack counter by (packet_index - excpected_num), set expected_num to packet_index + 1
+                             if pkt_index < expected_num:
+                                means we received a missing packet, decrement the nack counter by 1
+
+                        - if the pkt_index is the next in order then we can attempt to write
+                             - update the write array to the packet counter (if value in write_arr is one greater than the value last written -> we need to update the write arr value so we continue writing from the correct position/top row))
+                             - call write_pkts()
+                             - if needed, check if we can exit
+
+
+                case: feedback packet
+                        - check their acks for our machine and update if it is greater than our ack receieved
+                        - if their ack is equal to our minimum ack then they might not have recieved anything beyond that, so reseend them our last packet
+
+                        - check if we are able to shift our window 
+                                - if the minimum ack received from all machines increases
+                                - delete all packets that we have written and that have been acked
+
+                        - check if we can write
+
+                        - check their nacks they might be missing packets from us
+                                - if the number of nacks is greater than zero, resend those packets
+
+                
+                case: final packet
+                        - call check_store()
+                        - store it in received_pkts at index [incoming packets machine_index - 1, correct row: pkt_index mod window] - 1
+                        - if we can store -> check if its in order
+                          comparing pkt_index to expected_num (expected_arr[machine_index-1]):
+                             if pkt_index == expected_num:
+                                means in order, increment the expected_num
+                             if pkt_index > expected_num:
+                                means a packet is missed, increment nack counter by (packet_index - excpected_num), set expected_num to packet_index + 1
+                             if pkt_index < expected_num:
+                                means we received a missing packet, decrement the nack counter by 1
+
+                        
+                        - if the pkt_index is the next in order then we can attempt to write
+                                - we need to update the last in order and write array since these will be ignored in the write_pkt function
+
+                        - call write_pkts()
+                        - if needed, check if we can exit
+
         case: timeout
+                - send a feedback packet
+                - send last data packet sent
 
-        case: received a pkt
+    After receiveing packets:
+        check if receieved threshold has been met or timer has been exceed to send another burst and feedback packet
+        
 
+functions:
 
+check_store():
+     If we are not yet done writing for this machine
+     If pkt_index is between LIO and LIO+window_size: (LIO is the last_in_order_arr[machine_index]
+     If there isn't a packet in this index
 
+write_pkts():
+     this function attempts to write to the file
+
+     first we check if we can write - based on the write arr ( call get_min_index() )
+        - if there is a zero in write array --> then we don't have a packet from everyone so we can't write
+        - if the value at the index returned is -1 --> then we know we have written all the packets from everyone
+        - else the method returns the index with the minimum counter value (if there's two values with the same index we choose the first machine)
+
+     While get_min_index() returns a valid index
+        - we retrieve that packet from the gird and write to the file
+        - if the packet written was not the machine's own packet then we can delete it from the grid
+
+        - update the write array to the next counter value if it exists, or 0 if the packet doesn't
+        
